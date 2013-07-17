@@ -15,6 +15,9 @@ References:
    - https://github.com/visionmedia/commander.js
    - http://tjholowaychuk.com/post/9103188408/commander-js-nodejs-command-line-interfaces-made-easy
 
+ + restler.js
+   - https://github.com/danwrong/Restler
+
  + JSON
    - http://en.wikipedia.org/wiki/JSON
    - https://developer.mozilla.org/en-US/docs/JSON
@@ -24,8 +27,10 @@ References:
 var fs = require('fs');
 var program = require('commander');
 var cheerio = require('cheerio');
+var restler = require('restler');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
+var TEMPHTMLFILE = "/tmp/index.html";
 
 var assertFileExists = function(infile) {
     var instr = infile.toString();
@@ -55,6 +60,12 @@ var checkHtmlFile = function(htmlfile, checksfile) {
     return out;
 };
 
+var doGrading = function(htmlfile, checksfile) {
+    var checkJson = checkHtmlFile(htmlfile, checksfile); 
+    var outJson = JSON.stringify(checkJson, null, 4);
+    console.log(outJson);
+};
+
 var clone = function(fn) {
     // Workaround for commander.js issue.
     // http://stackoverflow.com/a/6772648
@@ -64,11 +75,32 @@ var clone = function(fn) {
 if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
-        .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+        .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists))//, HTMLFILE_DEFAULT)
+        .option('-u, --url <url>', 'URL to index.html') 
         .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+    // must specify file or url
+    if (null == program.file && null == program.url) {
+        console.log(program.help());
+    } else if (program.file && null == program.url) {
+        doGrading(program.file, program.checks);
+    } else if (null == program.file && program.url) {
+        // save html content from url in temporary file
+        fs.openSync(TEMPHTMLFILE, 'w');
+        restler.get(program.url).on('complete', function (result) {
+            if (result instanceof Error) {
+                console.log('Error: ' + result.message);
+            } else {
+                fs.writeFileSync(TEMPHTMLFILE, result);
+                doGrading(TEMPHTMLFILE, program.checks);
+                // remove the temporary file
+                fs.unlink(TEMPHTMLFILE, function(err) { 
+                    if (err) throw err; 
+                });
+            }
+        });
+    } else {  // both are defined
+        console.log(program.help());
+    }
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
